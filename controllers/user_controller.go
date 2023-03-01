@@ -13,6 +13,7 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var userCollection *mongo.Collection = configs.GetCollection(configs.DB, "users")
@@ -36,8 +37,13 @@ func CreateUser() gin.HandlerFunc {
 			return
 		}
 
+		// Hashing the password
+		hash, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+		if err != nil {
+			panic(err)
+		}
 		newUser := models.User{
-			Password:   user.Password,
+			Password:   string(hash),
 			IsActive:   user.IsActive,
 			Balance:    user.Balance,
 			Age:        user.Age,
@@ -105,6 +111,14 @@ func EditAUser() gin.HandlerFunc {
 			return
 		}
 
+		if user.Password != "" {
+			// Hashing the password
+			hash, err := bcrypt.GenerateFromPassword([]byte(user.Password), bcrypt.DefaultCost)
+			if err != nil {
+				panic(err)
+			}
+			user.Password = string(hash)
+		}
 		update := bson.M{
 			"password":   user.Password,
 			"isActive":   user.IsActive,
@@ -198,5 +212,39 @@ func GetAllUsers() gin.HandlerFunc {
 		c.JSON(http.StatusOK,
 			responses.UserResponse{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": users}},
 		)
+	}
+}
+
+func Login() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		var user models.User
+		defer cancel()
+
+		if err := c.BindJSON(&user); err != nil {
+			panic(err)
+		}
+		results, err := userCollection.Find(ctx, bson.M{})
+
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, responses.UserResponse{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"data": err.Error()}})
+			return
+		}
+
+		//reading from the db in an optimal way
+		defer results.Close(ctx)
+		for results.Next(ctx) {
+			var singleUser models.User
+			if err = results.Decode(&singleUser); err != nil {
+				c.JSON(http.StatusInternalServerError, responses.UserResponse{Status: http.StatusInternalServerError, Message: "error", Data: map[string]interface{}{"data": err.Error()}})
+			}
+
+			if singleUser.ID == user.ID && singleUser.Password == user.Password {
+				c.JSON(http.StatusOK,
+					responses.UserResponse{Status: http.StatusOK, Message: "success", Data: map[string]interface{}{"data": singleUser}},
+				)
+				return
+			}
+		}
 	}
 }
