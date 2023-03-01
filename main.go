@@ -1,14 +1,20 @@
 package main
 
+import (
+	"GoMongoCRUD/configs" //add this
+	"GoMongoCRUD/routes"  //add this
+
+	"github.com/gin-gonic/gin"
+)
+
 func main() {
-	config, err := config.LoadConfig(".")
+	router := gin.Default()
 
-	if err != nil {
-		log.Fatal("Could not load config", err)
-	}
+	//run database
+	configs.ConnectDB()
 
-	defer mongoclient.Disconnect(ctx)
+	//routes
+	routes.UserRoute(router) //add this
 
-	startGinServer(config)
-	// startGrpcServer(config)
+	router.Run("localhost:6000")
 }
